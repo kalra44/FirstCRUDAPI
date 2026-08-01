@@ -16,7 +16,6 @@ const PORT = 3000;
 
 const db = new Database("tasks.db");
 
-// Create tasks table if it does not exist
 db.prepare(`
   CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,10 +24,11 @@ db.prepare(`
   )
 `).run();
 
-// Check whether the table is empty
-const row = db.prepare("SELECT COUNT(*) AS count FROM tasks").get();
+// Seed only if database is empty
+const row = db
+  .prepare("SELECT COUNT(*) AS count FROM tasks")
+  .get();
 
-// Seed exactly 3 tasks only on first run
 if (row.count === 0) {
   const insertTask = db.prepare(
     "INSERT INTO tasks (title, done) VALUES (?, ?)"
@@ -43,38 +43,72 @@ if (row.count === 0) {
 
 console.log("💾 SQLite database connected");
 
+// ==============================
+// Middleware
+// ==============================
+
 app.use(express.json());
+
 // ==============================
 // Swagger UI
 // ==============================
 
-app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-
-// ==============================
-// In-Memory Database
-// ==============================
-
-let tasks = [
-  {
-    id: 1,
-    title: "Learn Express",
-    done: false,
-  },
-  {
-    id: 2,
-    title: "Build CRUD API",
-    done: false,
-  },
-  {
-    id: 3,
-    title: "Push to GitHub",
-    done: true,
-  },
-];
+app.use(
+  "/docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerDocument)
+);
 
 // ==============================
 // Root Endpoint
-// GET /
+// ==============================
+
+app.get("/", (req, res) => {
+  res.status(200).json({
+    name: "Task API",
+    version: "2.0",
+    storage: "SQLite",
+    endpoints: [
+      "GET /",
+      "GET /health",
+      "GET /tasks",
+      "GET /tasks/:id",
+      "POST /tasks",
+      "PUT /tasks/:id",
+      "DELETE /tasks/:id",
+    ],
+  });
+});
+
+// ==============================
+// Health Endpoint
+// ==============================
+
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+  });
+});
+
+// ==============================
+// GET All Tasks
+// ==============================
+
+app.get("/tasks", (req, res) => {
+  const tasks = db
+    .prepare("SELECT * FROM tasks")
+    .all();
+
+  const formattedTasks = tasks.map((task) => ({
+    ...task,
+    done: Boolean(task.done),
+  }));
+
+  res.status(200).json(formattedTasks);
+});
+
+// ==============================
+// GET Task By ID
 // ==============================
 
 app.get("/tasks/:id", (req, res) => {
@@ -96,50 +130,12 @@ app.get("/tasks/:id", (req, res) => {
 });
 
 // ==============================
-// Health Endpoint
-// GET /health
-// ==============================
-
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "ok",
-  });
-});
-
-// ==============================
-// GET All Tasks
-// ==============================
-
-app.get("/tasks", (req, res) => {
-  res.status(200).json(tasks);
-});
-
-// ==============================
-// GET Task By ID
-// ==============================
-
-app.get("/tasks/:id", (req, res) => {
-  const id = parseInt(req.params.id);
-
-  const task = tasks.find((t) => t.id === id);
-
-  if (!task) {
-    return res.status(404).json({
-      error: `Task ${id} not found`,
-    });
-  }
-
-  res.status(200).json(task);
-});
-
-// ==============================
 // POST Create Task
 // ==============================
 
 app.post("/tasks", (req, res) => {
-  const { title, done } = req.body;
+  const { title } = req.body;
 
-  // Title validation
   if (
     !title ||
     typeof title !== "string" ||
@@ -150,23 +146,21 @@ app.post("/tasks", (req, res) => {
     });
   }
 
-  // Done validation (optional)
-  if (done !== undefined && typeof done !== "boolean") {
-    return res.status(400).json({
-      error: "Done must be true or false",
-    });
-  }
+  const result = db
+    .prepare(
+      "INSERT INTO tasks (title, done) VALUES (?, ?)"
+    )
+    .run(title.trim(), 0);
 
-  const newTask = {
-    id: tasks.length ? tasks[tasks.length - 1].id + 1 : 1,
-    title: title.trim(),
-    done: done ?? false,
-  };
+  const newTask = db
+    .prepare("SELECT * FROM tasks WHERE id = ?")
+    .get(result.lastInsertRowid);
 
-  tasks.push(newTask);
+  newTask.done = Boolean(newTask.done);
 
   res.status(201).json(newTask);
 });
+
 // ==============================
 // PUT Update Task
 // ==============================
@@ -174,80 +168,47 @@ app.post("/tasks", (req, res) => {
 app.put("/tasks/:id", (req, res) => {
   const id = parseInt(req.params.id);
 
-  const task = tasks.find((t) => t.id === id);
+  const existingTask = db
+    .prepare("SELECT * FROM tasks WHERE id = ?")
+    .get(id);
 
-  if (!task) {
+  if (!existingTask) {
     return res.status(404).json({
-      error: `Task ${id} not found`,
+      error: "Task not found",
     });
   }
 
   const { title, done } = req.body;
 
- if (title !== undefined) {
   if (
+    title === undefined ||
     typeof title !== "string" ||
     title.trim() === ""
   ) {
     return res.status(400).json({
-      error: "Title must be a non-empty string",
+      error: "Title is required and must be a non-empty string",
     });
   }
 
-  task.title = title.trim();
-}
-
-  if (done !== undefined) {
-    if (typeof done !== "boolean") {
-      return res.status(400).json({
-        error: "Done must be true or false",
-      });
-    }
-
-    task.done = done;
-  }
-
-  res.status(200).json(task);
-});
-
-// ==============================
-// PATCH Update Task
-// ==============================
-
-app.patch("/tasks/:id", (req, res) => {
-  const id = parseInt(req.params.id);
-
-  const task = tasks.find((t) => t.id === id);
-
-  if (!task) {
-    return res.status(404).json({
-      error: `Task ${id} not found`,
+  if (typeof done !== "boolean") {
+    return res.status(400).json({
+      error: "Done must be true or false",
     });
   }
 
-  const { title, done } = req.body;
+  db.prepare(`
+    UPDATE tasks
+    SET title = ?, done = ?
+    WHERE id = ?
+  `).run(title.trim(), done ? 1 : 0, id);
 
-  if (title !== undefined) {
-    if (typeof title !== "string" || title.trim() === "") {
-      return res.status(400).json({
-        error: "Title must be a non-empty string",
-      });
-    }
+  const updatedTask = db
+    .prepare("SELECT * FROM tasks WHERE id = ?")
+    .get(id);
 
-    task.title = title.trim();
-  }
+  updatedTask.done = Boolean(updatedTask.done);
 
-  if (done !== undefined) {
-    if (typeof done !== "boolean") {
-      return res.status(400).json({
-        error: "Done must be true or false",
-      });
-    }
-
-    task.done = done;
-  }
-
-  res.status(200).json(task);
+  res.status(200).json(updatedTask);
 });
 
 // ==============================
@@ -257,18 +218,19 @@ app.patch("/tasks/:id", (req, res) => {
 app.delete("/tasks/:id", (req, res) => {
   const id = parseInt(req.params.id);
 
-  const index = tasks.findIndex((t) => t.id === id);
+  const result = db
+    .prepare("DELETE FROM tasks WHERE id = ?")
+    .run(id);
 
-  if (index === -1) {
+  if (result.changes === 0) {
     return res.status(404).json({
-      error: `Task ${id} not found`,
+      error: "Task not found",
     });
   }
 
-  tasks.splice(index, 1);
-
   res.status(204).send();
 });
+
 // ==============================
 // 404 Handler
 // ==============================
