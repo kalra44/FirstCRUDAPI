@@ -87,4 +87,10 @@ HTTP/1.1 201 Created
 
 ## Swagger UI
 
-![Swagger UI](swagger.png)
+The API documentation is available at:
+
+http://localhost:3000/docs
+
+### Screenshot
+
+![Swagger UI](./swagger.png)
