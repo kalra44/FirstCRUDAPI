@@ -77,20 +77,22 @@ let tasks = [
 // GET /
 // ==============================
 
-app.get("/", (req, res) => {
-  res.status(200).json({
-    name: "Task API",
-    version: "1.0",
-    endpoints: [
-      "GET /",
-      "GET /health",
-      "GET /tasks",
-      "GET /tasks/:id",
-      "POST /tasks",
-      "PUT /tasks/:id",
-      "DELETE /tasks/:id",
-    ],
-  });
+app.get("/tasks/:id", (req, res) => {
+  const id = parseInt(req.params.id);
+
+  const task = db
+    .prepare("SELECT * FROM tasks WHERE id = ?")
+    .get(id);
+
+  if (!task) {
+    return res.status(404).json({
+      error: "Task not found",
+    });
+  }
+
+  task.done = Boolean(task.done);
+
+  res.status(200).json(task);
 });
 
 // ==============================
