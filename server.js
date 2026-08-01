@@ -1,6 +1,7 @@
 const express = require("express");
 const swaggerUi = require("swagger-ui-express");
 const fs = require("fs");
+const Database = require("better-sqlite3");
 
 const swaggerDocument = JSON.parse(
   fs.readFileSync("./openapi.json", "utf8")
@@ -8,6 +9,39 @@ const swaggerDocument = JSON.parse(
 
 const app = express();
 const PORT = 3000;
+
+// ==============================
+// SQLite Database
+// ==============================
+
+const db = new Database("tasks.db");
+
+// Create tasks table if it does not exist
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    done INTEGER NOT NULL DEFAULT 0
+  )
+`).run();
+
+// Check whether the table is empty
+const row = db.prepare("SELECT COUNT(*) AS count FROM tasks").get();
+
+// Seed exactly 3 tasks only on first run
+if (row.count === 0) {
+  const insertTask = db.prepare(
+    "INSERT INTO tasks (title, done) VALUES (?, ?)"
+  );
+
+  insertTask.run("Learn Express", 0);
+  insertTask.run("Build CRUD API", 0);
+  insertTask.run("Push to GitHub", 1);
+
+  console.log("🌱 Database seeded with 3 tasks");
+}
+
+console.log("💾 SQLite database connected");
 
 app.use(express.json());
 // ==============================
