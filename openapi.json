@@ -2,8 +2,8 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Task API",
-    "version": "1.0.0",
-    "description": "Simple CRUD API for managing tasks"
+    "version": "2.0.0",
+    "description": "CRUD API for managing tasks with SQLite persistence"
   },
   "servers": [
     {
@@ -28,9 +28,11 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "required": ["title"],
                 "properties": {
                   "title": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "Learn SQLite"
                   }
                 }
               }
@@ -40,6 +42,9 @@
         "responses": {
           "201": {
             "description": "Task created"
+          },
+          "400": {
+            "description": "Invalid request body"
           }
         }
       }
@@ -78,9 +83,36 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title", "done"],
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "example": "Learn SQLite Database"
+                  },
+                  "done": {
+                    "type": "boolean",
+                    "example": true
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Task updated"
+          },
+          "400": {
+            "description": "Invalid request body"
+          },
+          "404": {
+            "description": "Task not found"
           }
         }
       },
@@ -99,6 +131,9 @@
         "responses": {
           "204": {
             "description": "Task deleted"
+          },
+          "404": {
+            "description": "Task not found"
           }
         }
       }
