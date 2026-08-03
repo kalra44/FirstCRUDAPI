@@ -1,8 +1,8 @@
 # Task API
 
-A simple CRUD API built with Node.js, Express, and SQLite for managing tasks.
+A containerized CRUD API built with Node.js, Express, and PostgreSQL for managing tasks.
 
-This project was originally built using in-memory storage and has now been upgraded to use a persistent SQLite database.
+This project started with in-memory storage, was upgraded to SQLite, and now uses a real PostgreSQL database running inside Docker. The complete API and database stack can be started with a single Docker Compose command.
 
 ## Features
 
@@ -11,48 +11,95 @@ This project was originally built using in-memory storage and has now been upgra
 - Create a new task
 - Update a task
 - Delete a task
-- SQLite database persistence
-- Automatic database and table creation
+- PostgreSQL database
+- Dockerized API and database
+- One-command startup using Docker Compose
+- Persistent database storage using Docker volumes
+- Automatic table creation
 - Automatic seeding of 3 example tasks
 - Input validation
 - Parameterized SQL queries
+- Environment-based database configuration
+- Database health check
 - Swagger UI documentation
 
 ---
 
-## Why SQLite?
+## Architecture
 
-SQLite was chosen because it is lightweight, requires zero database server setup, and stores the entire database in a single file.
+The application consists of two Docker services:
 
-Unlike the previous in-memory version of this API, tasks stored in SQLite survive server restarts.
+- `api` - Node.js and Express REST API
+- `db` - PostgreSQL 17 database
 
-The database file is:
+Docker Compose runs both services together.
 
-```text
-tasks.db
-```
+Inside the Docker Compose network, the API connects to PostgreSQL using the database service name `db`.
 
-It is created automatically when the application starts if it does not already exist.
-
-`tasks.db` is included in `.gitignore`, so every fresh clone creates its own database automatically.
+Database data is stored in a Docker volume so tasks survive container and full-stack restarts.
 
 ---
 
-## Installation
+## Prerequisites
 
-Clone the repository and install the dependencies:
+Install:
 
-```bash
-npm install
+- Docker Desktop
+- Git
+
+PostgreSQL does not need to be installed separately because it runs inside a Docker container.
+
+---
+
+## Environment Variables
+
+The application uses the `DATABASE_URL` environment variable to connect to PostgreSQL.
+
+An example configuration is provided in:
+
+```text
+.env.example
 ```
 
-## Run the Project
+For local development, copy it to `.env`:
 
 ```bash
-node server.js
+cp .env.example .env
 ```
 
-The server runs at:
+Example:
+
+```env
+DATABASE_URL=postgres://postgres:dev@localhost:5432/tasks
+```
+
+The real `.env` file is excluded from Git using `.gitignore`.
+
+---
+
+## Run the Complete Stack
+
+Start the API and PostgreSQL database with:
+
+```bash
+docker compose up
+```
+
+Or run in detached mode:
+
+```bash
+docker compose up -d
+```
+
+Docker Compose automatically:
+
+1. Starts PostgreSQL
+2. Waits for the database health check
+3. Builds and starts the Node.js API
+4. Creates the `tasks` table if it does not exist
+5. Seeds three example tasks only when the table is empty
+
+The API is available at:
 
 ```text
 http://localhost:3000
@@ -64,19 +111,27 @@ Swagger UI:
 http://localhost:3000/docs
 ```
 
-No manual database setup is required. On the first run, the application automatically creates `tasks.db`, creates the `tasks` table, and seeds three example tasks.
+Stop the stack with:
+
+```bash
+docker compose down
+```
 
 ---
 
 ## Database Schema
 
-The SQLite database contains a `tasks` table with the following columns:
+PostgreSQL contains a `tasks` table:
 
 | Column | Type | Description |
 |--------|------|-------------|
-| id | INTEGER | Primary key, automatically generated |
+| id | SERIAL | Primary key, automatically generated |
 | title | TEXT | Task title |
-| done | INTEGER | Completion status stored as 0 or 1 |
+| done | BOOLEAN | Task completion status |
+
+The table is automatically created when the application starts.
+
+Three example tasks are seeded only when the table is empty.
 
 ---
 
@@ -84,13 +139,13 @@ The SQLite database contains a `tasks` table with the following columns:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | / | API Info |
-| GET | /health | Health Check |
-| GET | /tasks | Get All Tasks |
-| GET | /tasks/:id | Get Task by ID |
-| POST | /tasks | Create Task |
-| PUT | /tasks/:id | Update Task |
-| DELETE | /tasks/:id | Delete Task |
+| GET | `/` | API information |
+| GET | `/health` | API and database health check |
+| GET | `/tasks` | Get all tasks |
+| GET | `/tasks/:id` | Get task by ID |
+| POST | `/tasks` | Create a task |
+| PUT | `/tasks/:id` | Update a task |
+| DELETE | `/tasks/:id` | Delete a task |
 
 ### Status Codes
 
@@ -99,6 +154,7 @@ The SQLite database contains a `tasks` table with the following columns:
 - `204 No Content` - Task successfully deleted
 - `400 Bad Request` - Invalid request body
 - `404 Not Found` - Task or route not found
+- `500 Internal Server Error` - Unexpected server/database error
 
 ---
 
@@ -109,7 +165,7 @@ Create a new task:
 ```bash
 curl -i -X POST http://localhost:3000/tasks \
 -H "Content-Type: application/json" \
--d "{\"title\":\"Buy Milk\"}"
+-d "{\"title\":\"Learn Docker\"}"
 ```
 
 Example response:
@@ -117,68 +173,116 @@ Example response:
 ```json
 {
   "id": 4,
-  "title": "Buy Milk",
+  "title": "Learn Docker",
   "done": false
 }
 ```
 
 ---
 
-## SQLite and Persistence
+## PostgreSQL Queries
 
-All CRUD operations now use SQL queries instead of an in-memory JavaScript array.
+All CRUD operations use PostgreSQL parameterized queries.
 
-For example, tasks are read using:
-
-```sql
-SELECT * FROM tasks;
-```
-
-Individual tasks use parameterized queries such as:
+Get all tasks:
 
 ```sql
-SELECT * FROM tasks WHERE id = ?;
+SELECT * FROM tasks ORDER BY id;
 ```
 
-Using parameterized placeholders keeps user input separate from the SQL query and helps protect the database from SQL injection.
+Get a task by ID:
 
-Tasks remain stored in `tasks.db` even after the Node.js server is stopped and restarted.
+```sql
+SELECT * FROM tasks WHERE id = $1;
+```
+
+Create a task:
+
+```sql
+INSERT INTO tasks (title, done)
+VALUES ($1, $2)
+RETURNING *;
+```
+
+Update a task:
+
+```sql
+UPDATE tasks
+SET title = $1, done = $2
+WHERE id = $3
+RETURNING *;
+```
+
+Delete a task:
+
+```sql
+DELETE FROM tasks
+WHERE id = $1;
+```
+
+Parameterized queries keep user input separate from SQL and help protect the application from SQL injection.
 
 ---
 
-## SQL Exploration
+## Docker Volume and Persistence
 
-The database was also explored directly using DB Browser for SQLite.
+PostgreSQL data is stored in the named Docker volume:
 
-Example query:
-
-```sql
-SELECT COUNT(*) FROM tasks;
+```text
+taskdata
 ```
 
-This query returns the total number of tasks stored in the database.
+Persistence was tested by:
 
-Other SQL queries tested include:
+1. Creating a new task
+2. Running `docker compose down`
+3. Starting the stack again with `docker compose up`
+4. Requesting `GET /tasks`
 
-```sql
-SELECT * FROM tasks;
+The previously created task remained in PostgreSQL after the complete stack restart.
 
-SELECT * FROM tasks WHERE done = 1;
+This demonstrates that the database volume persists independently of the containers.
 
-UPDATE tasks SET done = 1;
+---
 
-DELETE FROM tasks WHERE done = 1;
+## Health Check
+
+The API provides:
+
+```text
+GET /health
 ```
 
-Changes made directly in DB Browser were immediately reflected by the API because both the API and DB Browser use the same SQLite database file.
+The endpoint also executes:
+
+```sql
+SELECT 1;
+```
+
+to confirm that PostgreSQL is reachable.
+
+Docker Compose also uses `pg_isready` to check database readiness before starting the API.
 
 ---
 
 ## Database Screenshot
 
-The `tasks` table viewed using DB Browser for SQLite:
+The PostgreSQL `tasks` table can be inspected with:
 
-![SQLite Database](./database.png)
+```bash
+docker compose exec db psql -U postgres -d tasks
+```
+
+Then:
+
+```sql
+\dt
+SELECT * FROM tasks;
+```
+
+Database screenshot:
+
+![PostgreSQL Database](./postgres-database.png)
 
 ---
 
@@ -198,16 +302,52 @@ http://localhost:3000/docs
 
 - Node.js
 - Express.js
-- SQLite
-- better-sqlite3
+- PostgreSQL 17
+- node-postgres (`pg`)
+- Docker
+- Docker Compose
+- Docker Volumes
+- dotenv
 - Swagger UI Express
 - OpenAPI 3.0
-- DB Browser for SQLite
 
 ---
 
 ## Storage Migration
 
-The API endpoints and their behavior remain the same as the original in-memory CRUD API. Only the storage layer was changed from a JavaScript array to SQLite.
+This API has now used three different storage approaches:
 
-The same API requests continue to work after the migration, demonstrating that the database is an implementation detail behind the API.
+| Version | Storage |
+|---------|---------|
+| A1 | In-memory JavaScript array |
+| A2 | SQLite database |
+| A3 | PostgreSQL in Docker |
+
+The API endpoints and their behavior remain the same across the storage migrations.
+
+Only the storage implementation changed, demonstrating that storage is an implementation detail behind the API.
+
+---
+
+## Project Structure
+
+```text
+FirstCRUDAPI/
+├── Dockerfile
+├── compose.yaml
+├── server.js
+├── openapi.json
+├── package.json
+├── package-lock.json
+├── .env.example
+├── .gitignore
+├── README.md
+├── postgres-database.png
+└── swagger.png
+```
+
+---
+
+## Author
+
+Backend Development Internship Project - FlyRank
