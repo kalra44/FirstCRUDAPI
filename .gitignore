@@ -1,3 +1,4 @@
 node_modules/
+.env
 gcm-diagnose.log
 tasks.db
