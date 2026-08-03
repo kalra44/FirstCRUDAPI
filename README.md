@@ -345,9 +345,3 @@ FirstCRUDAPI/
 ├── postgres-database.png
 └── swagger.png
 ```
-
----
-
-## Author
-
-Backend Development Internship Project - FlyRank
